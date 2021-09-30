@@ -1,0 +1,73 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+## Model Validation
+
+### Libraries
+```{r message = FALSE, warning = FALSE}
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+```
+
+```{r message = FALSE, warning = FALSE}
+bike <- read_csv("bike_cleaned.csv")
+bike = bike %>% 
+  mutate(dteday = mdy(dteday)) %>% 
+  mutate_if(is.character, as_factor) %>%
+  mutate(hr = as_factor(hr))
+#str(bike)
+```
+### Task 1: Training and Testing Sets  
+```{r}
+set.seed(1234)
+bike_split = initial_split(bike, prob=0.7, strata = count)
+train = training(bike_split)
+test = testing(bike_split)
+```
+
+### Task 2: Examine the data  
+**Train -** 13,032 rows  
+**Test -** 4,347 rows  
+```{r}
+#str(train)
+#str(test)
+```
+
+### Task 3: Linear Regression
+**The adjusted R squared value is 0.6223. There were many values that were not significant in this model. Perhaps a lasso model would yield better results but overall, the R squared value is satisfactory  ** 
+```{r}
+bike_recipe = recipe(count ~ season + mnth + hr + holiday + weekday + temp + weathersit, train) 
+
+lm_model =
+  linear_reg() %>%
+  set_engine("lm")
+
+lm_wflow =
+  workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(bike_recipe)
+
+lm_fit = fit(lm_wflow, train)
+
+summary(lm_fit$fit$fit$fit)
+```
+### Task 4: Testing
+**The histogram of the prediction shows a relatively normal distribution**
+```{r}
+predict_train <- predict(lm_fit, new_data = test)
+
+ggplot(predict_train, aes(x = .pred)) + geom_histogram()
+```
+
+### Task 5: Performance
+**The R squared value of the test set is 0.6248 which is similar to to that of the previous model (0.6223). The model performed well as the R squared value did not change significantly with the addition of the test data  **
+```{r}
+lm_fit %>% 
+  predict(test) %>%
+  bind_cols(test) %>%
+  metrics(truth = count, estimate = .pred)
+```
+

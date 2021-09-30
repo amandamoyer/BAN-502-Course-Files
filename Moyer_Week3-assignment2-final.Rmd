@@ -1,0 +1,337 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+## Logistic Regression
+
+### Libraries & Data  
+```{r message=FALSE, warning=FALSE, messages=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(e1071)
+library(ROCR)
+```
+
+```{r message=FALSE, warning=FALSE, messages=FALSE}
+parole <- read_csv("parole.csv")
+#str(parole)
+#summary(parole)
+```
+```{r}
+parole <- parole %>%
+  mutate(male = as.factor(male)) %>%
+  mutate(race = as.factor(race)) %>%
+  mutate(state = as.factor(state)) %>%
+  mutate(crime = as.factor(crime)) %>%
+  mutate(multiple.offenses = as.factor(multiple.offenses)) %>%
+  mutate(violator = as.factor(violator)) %>%
+  mutate(male = fct_recode(male, "male" = "1", "female" = "0")) %>%
+  mutate(race = fct_recode(race, "white" = "1", "other" = "2")) %>%
+  mutate(state = fct_recode(state, "Other" = "1", "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4")) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "yes" = "1", "no" = "0")) %>%
+  mutate(crime = fct_recode(crime, "Other" = "1", "larceny" = "2", "drug-related crime" = "3", "driving-related crime" = "4")) %>%
+  mutate(violator = fct_recode(violator, "yes" = "1", "no" = "0"))
+
+#str(parole)
+  
+```
+
+### Task 1: Testing and Training Sets
+```{r}
+set.seed(12345)
+parole_split = initial_split(parole, prob = 0.07, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+### Task 2: Visualize
+
+**Male** - There is a slight difference between makes and females but nothing that significantly stands out  
+```{r}
+ggplot(train, aes(x=male, fill = violator)) + geom_bar(position="fill")
+```
+```{r}
+t_male = table(train$violator, train$male)
+prop.table(t_male, margin = 2)
+```
+
+**race** -  Again, a small difference between races but nothing major  
+```{r}
+ggplot(train, aes(x=race, fill = violator)) + geom_bar(position="fill")
+```
+
+```{r}
+t_race = table(train$violator, train$race)
+prop.table(t_race, margin = 2)
+```
+
+**age** - There is somewhat of a difference in the interquartile range of the 2 variables but overall they are similar. The medians are almost equivalent. There is a larger range for the non-violator category but that is most likely due to the unbalanced data set
+```{r}
+ggplot(train, aes(x=violator, y=age)) + geom_boxplot()
+```
+```{r}
+ggplot(train, aes(x=violator)) + geom_bar()
+```
+
+**state** - There does seem to be a relationship between state and violator although it could also be skewed by the differences in observation count between states
+```{r}
+ggplot(train, aes(x=state, fill = violator)) + geom_bar(position="fill")
+```
+
+```{r}
+t_state = table(train$violator, train$state)
+prop.table(t_state, margin = 2)
+```
+
+```{r}
+ggplot(train, aes(x=state)) + geom_bar()
+```
+
+**time served** - There is a difference in the IQR of the 2 levels but the medians are relatively the same. 
+```{r}
+ggplot(train, aes(x=violator, y=time.served)) + geom_boxplot()
+```
+  
+  
+**max sentence** - There is a difference between the box plots for max.sentence. The change of violating parole is lower when the max sentence is less.  
+```{r}
+ggplot(train, aes(x=violator, y=max.sentence)) + geom_boxplot()
+```
+  
+**multiple offenses** - There is a small difference between the 2 levels. It is possible that this is a contributing factor. Multiple offenses may make it more likely to be a violator.  
+```{r}
+ggplot(train, aes(x=multiple.offenses, fill = violator)) + geom_bar(position="fill")
+```
+```{r}
+t_offense = table(train$violator, train$multiple.offenses)
+prop.table(t_offense, margin = 2)
+```
+**crime** - Those that commit driving-related crimes are less likely to violate parole. Other and drug-related crimes have higher violation rates. 
+```{r}
+ggplot(train, aes(x=crime, fill = violator)) + geom_bar(position="fill")
+```
+```{r}
+t_crime = table(train$violator, train$crime)
+prop.table(t_crime, margin = 2)
+```
+### Task 3: base logistic regression model  
+  
+State appeared to have the clearest relationship with violator in the above analysis. Kentucky, Lousiana, and Virginia were significant variables in the model. AIC = 287.75
+
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>%
+  add_model(parole_model)
+
+parole_fit_base = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit_base$fit$fit$fit)
+```
+### Task 4: Other Models
+
+**Multiple Offenses** - Higher AIC than the base model. This model is worse than the previous one. Both levels of multiple.offenses were significant.
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ multiple.offenses, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>%
+  add_model(parole_model)
+
+parole_fit_1 = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit_1$fit$fit$fit)
+```
+
+**Max sentence** - also worse than the base model. AIC = 348.92 compared to 287.75 in the original model. 
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ max.sentence, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>%
+  add_model(parole_model)
+
+parole_fit_2 = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit_2$fit$fit$fit)
+```
+**All variables** - Including all variables did decrease teh AIC to 278.63 which is better than the base model AIC of 287.75 however multiple variables were not significant in this model. The lasso model below also included all variables and 
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ ., train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>%
+  add_model(parole_model)
+
+parole_fit_all = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit_all$fit$fit$fit)
+```
+
+**lasso model** - Lasso did not exclude any of the variables. The lasso fit makes sense logically. Being a male, other race, in Louisiana, with multiple offenses seemed to increase the chances of a parole violation (to some degree) based on the bar charts and box plots above. Larceny did not appear to affect violator however its affect in the lasso fit is very minimally positive. 
+```{r}
+lasso_model = 
+  logistic_reg(mixture=1) %>%
+  set_engine("glmnet")
+
+parole_recipe = recipe(violator ~., train ) %>%
+  step_dummy(all_nominal(), -all_outcomes()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+  
+lasso_wflow =
+  workflow() %>%
+  add_model(lasso_model) %>%
+  add_recipe(parole_recipe)
+
+lasso_fit = fit(lasso_wflow, train)
+```
+
+```{r}
+lasso_fit %>%
+  extract_fit_parsnip() %>% ##error received: Warning: `pull_workflow_fit()` was deprecated in workflows 0.2.3.Please use `extract_fit_parsnip()` instead.
+  pluck("fit")
+```
+```{r}
+lasso_fit %>%
+  extract_fit_parsnip() %>%
+  pluck("fit") %>%
+  coef(s = 0.000888)
+```
+
+### Task 5
+
+In this model, Virginia, multiple.offenses, and "other" race were significant. The AIC was lower than that of previous models so this is a better predictor of violator.
+```{r}
+parole_model = 
+  logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state + multiple.offenses + race, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>%
+  add_model(parole_model)
+
+parole_fit_3 = fit(logreg_wf, train)
+
+```
+
+```{r}
+summary(parole_fit_3$fit$fit$fit)
+```
+
+### Task 6
+
+Parolee1: 40.3% chance of parole violation
+```{r}
+newdata = data.frame(state = "Louisiana", multiple.offenses = "yes", race = "white")
+predict(parole_fit_3, newdata, type="prob")
+```
+
+Parolee2: 13.7% chance of parole violation
+```{r}
+newdata = data.frame(state = "Kentucky", multiple.offenses = "no", race = "other")
+predict(parole_fit_3, newdata, type="prob")
+```
+
+### Task 7
+```{r}
+predictions = predict(parole_fit_3, train, type="prob")
+head(predictions)
+```
+
+```{r}
+predictions = predict(parole_fit_3, train, type="prob")[2]
+head(predictions)
+```
+
+
+```{r}
+ROCRpred = prediction(predictions, train$violator)
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), test.adj=c(-0.2,1.7))
+```
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+```{r}
+opt.cut = function(perf, pred){
+  cut.ind = mapply(FUN=function(x, y, p){
+    d = (x - 0)^2 + (y-1)^2
+    ind = which(d == min(d))
+    c(sensitivity = y[[ind]], specificity = 1-x[[ind]],
+      cutoff = p[[ind]])
+  }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+
+```
+
+### Task 8
+
+Incorrectly classifying a parolee could lead to the parolee not being granted parole. 
+```{r}
+t1 = table(train$violator, predictions > 0.1295001)
+t1
+```
+Accuracy
+```{r}
+(t1[1,1]+t1[2+2])/nrow(train)
+```
+Sensitivity
+```{r}
+41/(17+41)
+```
+Specificity
+```{r}
+374/(374+73)
+```
+### Task 9
+
+```{r}
+
+t2 = table(train$violator, predictions > 0.34)
+t2
+(t2[1,1]+t2[2+2])/nrow(train)
+```
+### Taks 10: Accuracy on the testing set
+```{r}
+predictions2 = predict(parole_fit_3, test, type="prob")[2]
+head(predictions2)
+```
+
+```{r}
+t3 = table(test$violator, predictions2 > 0.34)
+t3
+(t3[1,1]+t3[2+2])/nrow(test)
+```
+
+

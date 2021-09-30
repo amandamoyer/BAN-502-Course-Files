@@ -1,0 +1,74 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+## R and RStudio Refresher
+
+### Task 1: Library
+```{r message=FALSE, warning=FALSE}
+#install.packages("tidyverrse")
+library(tidyverse)
+```
+
+### Task 2: Load Data
+**There are 53,940 rows and 10 columns in the data set  **
+```{r message=FALSE, warning=FALSE}
+diamonddata = diamonds
+#str(diamonddata)
+```
+
+### Task 3: Scatterplot - Carat vs. Price
+**Carat and price have a positive correlation. As carat increases, price also increases.  **  
+```{r}
+ggplot(diamonddata, aes(x=carat, y=price)) + geom_point()
+```
+
+
+### Task 4: Scatterplot - Color vs Price vs Cut
+
+**To some extent, the cut of the diamond contributes to the price at lower carats. At 2 carats and below, ideal cut diamonds are of far greater value than fair cut diamonds. As the carat size increases however, this relationship weakens**  
+```{r}
+ggplot(diamonddata, aes(x=carat, y=price, color=cut)) + geom_point()
+```
+
+### Task 5: Sctterplot Facets
+**Diamond color is related to carat size and price. Certain colors such as D tend to be smaller carats. In these color categories, price increases at a faster rate with increasing carat size. Color D reaches $15,000+ at only 1 carat while J does not surpass $1500 until 2 carats or more. Colors such as J increase in price at a slower rate but have a higher maximum carat size.**
+```{r}
+ggplot(diamonddata, aes(x=carat, y=price, color=cut)) + geom_point() + facet_wrap(~color)
+```
+
+### Task 6: Loading InventoryData
+**There are 13561 rows and 6 columns in this data set**
+```{r}
+inventory <- read_csv("InventoryData.csv")
+#str(inventory)
+#summary(inventory)
+```
+
+### Task 7: InventoryA
+
+**There are 3,695 rows and 6 columns in the inventoryA data frame**  
+```{r}
+inventoryA <- inventory %>%
+  filter(Supplier == "A")
+#str(inventoryA)
+```
+
+### Task 8: Mutate inventoryA
+**The following line of code creates a new column called OnHandRatio in the inventoryA data frame.The values in this column are calculated by dividing the value in the OnHand column by the value in the Annual Demand column**
+```{r}
+inventoryA = mutate(inventoryA, OnHandRatio = `On Hand` / `Annual Demand`)
+```
+
+### Task 9: avg_cost data frame
+```{r}
+avg_cost <-  inventoryA %>%
+  group_by(`Item SKU`) %>%
+  summarize(SKUAvgCost = mean(`Cost per Unit ($)`))
+str(avg_cost)
+
+```
+### Task 10: Reflection
+**The most difficult part for me was getting started. I completed the DataCamp course and found it to be extremely helpful. It has been several months since I took the introductory R course so I was grateful for the refresher. I wasn't sure how much I would remember but it came back to me quickly once I went through the exercises. Once I remembered how to create a new project and RMarkdown document, I didn't find the rest of the assingment to be challenging.**
+

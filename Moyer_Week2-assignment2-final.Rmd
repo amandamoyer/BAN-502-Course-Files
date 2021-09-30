@@ -1,0 +1,185 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Multiple Linear Regression
+
+## Libraries
+```{r message = FALSE, warning = FALSE}
+library(tidyverse)
+library(tidymodels)
+library(glmnet)
+library(GGally)
+library(ggcorrplot)
+library(MASS)
+library(car)
+library(lubridate)
+library(lmtest)
+library(gridExtra)
+library(devtools)
+library(parsnip)
+```
+
+
+## TASK 1: Read in the data
+**The variable hr needs to be convverted to a factor because although it is a numeric value, it is being used as a categorical value to represent the time of day. Mathematical functions can not logically be applied to hours of the day in this case.**  
+```{r message = FALSE, warning = FALSE}
+bike <- read_csv("bike_cleaned.csv")
+bike = bike %>% 
+  mutate(dteday = mdy(dteday)) %>% 
+  mutate_if(is.character, as_factor) %>%
+  mutate(hr = as_factor(hr))
+#str(bike)
+#17,379 observations, 16 variables
+```
+## TASK 2: Correlation
+**Although none of the quantitative variables seem to have a strong relationship with Count, the variable "temp" (corr 0.405) appears to have the strongest relationship. The scatter plot also shows a generally positive relationship between temp and count**
+```{r warning = FALSE}
+ggpairs(bike, columns = c(1, 10:13, 16))
+ggcorr(bike, label = TRUE)
+```
+  
+### Closer look at temp  
+```{r}
+ggplot(bike, aes(x=temp, y=count)) + geom_point() + geom_jitter(alpha=0.15)
+```
+  
+## TASK 3: Boxplots  
+**hour** - does affect count. There are large differences in the median and range at different times of the day however there is a great deal of variation throughout the day so the relationship is not linear.  
+**season** - somewhat of a predictor although logically, multiple variables (temp, weather etc) are related to season so co-linearity may exist  
+**mnth** - also shows somewhat of a relationship to count however this is also related to season   
+**holiday** - does not appear to be a predictor. The median and range are similar  
+**weekday** - very little difference in range and median between days  
+**workingday** - does not appear to affect count. The median and range of the working day vs not working day plots are relatively the same  
+**weathersit** - seems to have a strong relationship to count. As the amount of precipitation increases, the count decreases. As close to a linear relationship as a categorical variable can be  
+  
+### Grid View  
+```{r}
+p1 <- ggplot(bike,aes(x=hr,y=count)) + geom_boxplot() + theme_bw()
+p2 <- ggplot(bike,aes(x=season,y=count)) + geom_boxplot() + theme_bw()
+p3 <- ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot() + theme_bw()
+p4 <- ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot() + theme_bw()
+p5 <- ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot() + theme_bw()
+p6 <- ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot() + theme_bw()
+p7 <- ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot() + theme_bw()
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,ncol=3)
+```
+
+### Individual View: Hiiden from Markdown
+```{r message = FALSE, warning = FALSE}
+#ggplot(bike,aes(x=hr,y=count)) + geom_boxplot() + theme_bw()
+#ggplot(bike,aes(x=season,y=count)) + geom_boxplot() + theme_bw()
+#ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot() + theme_bw()
+#ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot() + theme_bw()
+#ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot() + theme_bw()
+#ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot() + theme_bw()
+#ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### TASK 4: Model
+**Based on the correlations calculated at the beginning of this analysis, temp was chosen to be the "best" predictor of count. While the p value is significant, the R squared value is very low at 0.1638. The scatter plot of the residuals shows a clear pattern and the histogram is skewed. Temperature alone is not a good predictor of count.  ** 
+
+**Alternatively, hr produces a model with the a low p value and a moderate R squared value of 0.5. Upon closer inspection however, the model is not high quality. The basic boxplot of hr vs count shows that the relationship is non linear. The residuals are evenly distributed in the histogram however the scatter plot of residuals show a clear pattern. The higher R squared value may have resulted from the addition of a factor with multiple levels thereby increasing the number of variables and the R squared value**  
+```{r}
+bike_count = recipe(count ~ temp, bike) 
+
+lm_model =
+  linear_reg() %>%
+  set_engine("lm")
+
+lm_wflow =
+  workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(bike_count)
+
+lm_fit = fit(lm_wflow, bike)
+
+summary(lm_fit$fit$fit$fit)
+```
+### Visualizing hr vs count
+```{r}
+ggplot(bike, aes(x=temp, y=count)) + geom_point(alpha = 0.15) + geom_smooth(method = lm, se = FALSE, color="red")
+```
+
+Daignostics
+```{r}
+dwtest(lm_fit$fit$fit$fit)
+
+bike_resid = bike %>%
+  mutate(resid2 = lm_fit$fit$fit$fit$residuals)
+
+ggplot(bike_resid, aes(x=count, y=resid2)) + geom_point()
+
+ggplot(bike_resid, aes(x=resid2)) + geom_histogram()
+```
+
+### Task 5: Ridge Regression
+**15 was chosen as the lambda value resulting in an R squared of 0.62 which is significantly improved from the previous model.**
+```{r}
+bike_count = recipe(count ~., bike) %>%
+  step_rm(instant, dteday, registered, casual) %>%
+  step_dummy(all_nominal()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors()) 
+  
+
+ridge_model =
+  linear_reg(mixture = 0) %>%
+  set_engine("glmnet")
+
+ridge_wflow =
+  workflow() %>%
+  add_model(ridge_model) %>%
+  add_recipe(bike_count)
+
+ridge_fit = fit(ridge_wflow, bike)
+```
+
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 15)
+```
+
+
+### Task 6: Lasso
+**The lasso model produced an R squared of 0.632 with a lambda of 0.158. The resultin model was able to eliminate 3 factors which produced a simpler model than the ridge regression. The ridge and lasso methods show that no single variable in the data set is a good predictor of count however a reasonable model can be produced when multiple variables are considered**
+```{r}
+bike_count = recipe(count ~., bike) %>%
+  step_rm(instant, dteday, registered, casual) %>%
+  step_dummy(all_nominal()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+lasso_model =
+  linear_reg(mixture = 1) %>%
+  set_engine("glmnet")
+
+lasso_wflow =
+  workflow() %>%
+  add_model(lasso_model) %>%
+  add_recipe(bike_count)
+
+lasso_fit = fit(lasso_wflow, bike)
+```
+
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit") 
+```
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 0.158)
+```
+
