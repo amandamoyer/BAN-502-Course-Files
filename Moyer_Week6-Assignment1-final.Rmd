@@ -1,0 +1,127 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+### Clustering  
+
+## Libraries
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidymodels)
+```
+
+```{r message=FALSE, warning=FALSE}
+trucks <- read_csv("trucks.csv")
+
+#str(trucks)
+```
+## Task 1  
+
+There does appear to be some natural clustering in the data. There is a cluster of points traveling less than ~80 miles and speeding for less than ~12% of the time. Another cluster of those that were speeding for more than 12% of the time while driving 80 miles or less. There are 2 more clusters for those traveling 125+ miles. There is a group that was speeding between 0-25% of the trip and another, more scattered cluster for those that were speeding for more than 25% of the trip.   
+```{r}
+ggplot(trucks, aes(x=Distance, y=Speeding)) + geom_point() 
+```
+
+## Task 2  
+```{r}
+kmeans_recipe = recipe(~ Distance + Speeding, trucks)
+
+trucks_dummy = kmeans_recipe %>%
+  step_scale(all_numeric()) %>%
+  step_center(all_numeric())
+
+trucks_dummy = prep(trucks_dummy, trucks)
+
+trucks_cleaned = bake(trucks_dummy, trucks)
+```
+
+### Task 3  
+
+The clusters are predictable based on the initial scatter plot. With only 2 groups, they are grouped by distance traveled into those above 125 and those under 125 miles.  
+
+```{r}
+set.seed(64)
+clusters = kmeans(trucks_cleaned, 2)
+```
+
+```{r}
+trucks = augment(clusters, trucks)
+str(trucks)
+```
+```{r}
+ggplot(trucks, aes(x=Distance, y=Speeding, color=factor(.cluster))) + geom_point()
+```
+  
+
+
+## Task 4  
+
+4 clusters seem appropriate for this data set based on the visualizations below.  
+
+```{r}
+set.seed(412)
+clusts =
+  tibble(k= 1:8) %>%
+  mutate(
+    kclust = map(k, ~kmeans(trucks_cleaned, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, trucks_cleaned)
+  )
+
+clusts
+```
+
+```{r}
+clusters = 
+  clusts %>%
+  unnest(cols = c(tidied))
+
+assignments = 
+  clusts %>%
+  unnest(cols = c(augmented))
+
+clusterings = 
+  clusts %>%
+  unnest(cols = c(glanced))
+```
+
+```{r}
+p1 = 
+  ggplot(assignments, aes(x=Distance, y=Speeding)) + geom_point(aes(color=.cluster), alpha = 0.8) + facet_wrap(~k)
+
+p1
+```
+
+  
+
+## Task 5  
+
+Based on the plot, k = 4 is at the "elbow" of the line and seems to be most appropriate. 
+
+```{r}
+ggplot(clusterings, aes(k, tot.withinss)) + geom_line() + geom_point()
+```
+
+
+## Task 6  
+
+These clusters seem most appropriate for this data based on the analysis above. It was predicted based on the initial visualization that 4 clusters could be made from this data. The analysis agrees with the inital prediction.  
+
+```{r}
+set.seed(64)
+clusters = kmeans(trucks_cleaned, 4)
+```
+
+```{r}
+trucks = augment(clusters, trucks)
+str(trucks)
+```
+
+```{r}
+ggplot(trucks, aes(x=Distance, y=Speeding, color=factor(.cluster))) + geom_point()
+```
+
+
+

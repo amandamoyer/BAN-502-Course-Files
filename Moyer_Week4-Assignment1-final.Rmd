@@ -1,0 +1,289 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+## Classification Trees
+
+### Libraries & Data  
+```{r message=FALSE, warning=FALSE, messages=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+```
+
+```{r message=FALSE, warning=FALSE}
+parole <- read_csv("parole.csv")
+#str(parole)
+#summary(parole)
+```
+```{r}
+parole <- parole %>%
+  mutate(male = as.factor(male)) %>%
+  mutate(race = as.factor(race)) %>%
+  mutate(state = as.factor(state)) %>%
+  mutate(crime = as.factor(crime)) %>%
+  mutate(multiple.offenses = as.factor(multiple.offenses)) %>%
+  mutate(violator = as.factor(violator)) %>%
+  mutate(male = fct_recode(male, "male" = "1", "female" = "0")) %>%
+  mutate(race = fct_recode(race, "white" = "1", "other" = "2")) %>%
+  mutate(state = fct_recode(state, "Other" = "1", "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4")) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "yes" = "1", "no" = "0")) %>%
+  mutate(crime = fct_recode(crime, "Other" = "1", "larceny" = "2", "drug-related crime" = "3", "driving-related crime" = "4")) %>%
+  mutate(violator = fct_recode(violator, "yes" = "1", "no" = "0"))
+
+#str(parole)
+  
+```
+
+### Task 1: Testing and Training Sets
+```{r}
+set.seed(12345)
+parole_split = initial_split(parole, prop = 0.7, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+### Task 2: Classification Tree
+```{r}
+parole_recipe = recipe(violator ~ ., train)
+
+tree_model = decision_tree() %>%
+  set_engine("rpart", model = TRUE) %>%
+  set_mode("classification")
+
+parole_wflow =
+  workflow() %>%
+  add_model(tree_model) %>%
+  add_recipe(parole_recipe)
+
+parole_fit = fit(parole_wflow, train)
+```
+
+```{r}
+tree = parole_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")
+  
+fancyRpartPlot(tree, tweak = 1.2)
+```
+
+### Task 3  
+
+40 year old parolee from Louisiana who served 5 years in prison with a sentence of 10 years and multiple offenses
+
+**state = Other, Kentucky, Virginia:** no  
+**race = white:** yes  
+
+If the race = white, the parolee will not violate parole according to the model. 2% of the data matches this case and 80% do not violate parole.  
+
+**state = Other, Kentucky, Virginia:** no  
+**race = white:** no   
+**time_served >= 3.9:** yes  
+**age<30:** no  
+
+If the race = Other, the model predicts that the parolee will violate parole but just barely. 3% of the data fit's into this exact category and there is a 54% chance the parolee will violate parole. 
+
+### Task 4  
+
+It chose a CP value of 0.01000000 which corresponds to an xerror of 1.314815 and 8 splits. The minimal xerror value actually occurs with 0 folds. Every additional fold increases the xerror. The minimal xerror value of a tree with splits is 1.240741 which corresponds to 3 splits and a CP value of 0.01851852. The model did not use the optimal CP value
+
+```{r}
+parole_fit$fit$fit$fit$cptable
+```
+### Task 5    
+
+```{r}
+set.seed(123)
+folds = vfold_cv(train, v = 5)
+```
+
+```{r}
+parole_recipe = recipe(violator ~ ., train)
+
+tree_model = decision_tree(cost_complexity = tune()) %>%
+  set_engine("rpart", model = TRUE) %>%
+  set_mode("classification")
+
+tree_grid = grid_regular(cost_complexity(), levels = 25)
+
+parole_wflow =
+  workflow() %>%
+  add_model(tree_model) %>%
+  add_recipe(parole_recipe)
+
+tree_res =
+  parole_wflow %>%
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+  )
+```
+
+```{r}
+tree_res
+```
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2)
+```
+  
+### Task 6  
+
+A CP value of 0.04216965 yeilded the optimal accuracy in this model  
+
+```{r}
+best_tree = tree_res %>%
+  select_best("accuracy")
+
+best_tree
+```
+
+### Task 7
+
+```{r}
+final_wf =
+  parole_wflow %>%
+  finalize_workflow(best_tree)
+```
+
+```{r}
+final_fit = fit(final_wf,train)
+
+tree= final_fit %>%
+  extract_fit_parsnip() %>% 
+  pluck("fit")
+
+#fancyRpartPlot(tree, tweak = 1.2)
+```
+
+### Task 8
+
+```{r}
+table(train$violator)
+```
+Since the cp value generated a tree with no splits, the decision tree is telling us that you can categorize everyone as "not a violator". Because the data set is unbalanced, there are more data points that are not violators. In this case, predicting that any parolee will not violate parole will result in 88.5% accuracy solely based on the fact that 88.5% of the data points are non-violators in this data set. 
+
+```{r}
+417/(417+54)
+```
+### Task 9
+
+```{r}
+Blood <- read_csv("Blood.csv")
+#str(Blood)
+#summary(Blood)
+```
+```{r}
+Blood = Blood %>%
+  mutate(DonatedMarch = as.factor(DonatedMarch)) %>%
+  mutate(DonatedMarch = fct_recode(DonatedMarch, "Yes" = "1", "No" = "0"))
+#str(Blood)
+#summary(Blood)
+```
+
+### Task 9 cont.  
+
+```{r}
+set.seed(1234)
+blood_split = initial_split(Blood, prop = 0.7, strata = DonatedMarch)
+train2 = training(blood_split)
+test2 = testing(blood_split)
+```
+
+```{r}
+set.seed(1234)
+folds = vfold_cv(train2, v = 5)
+```
+
+```{r}
+blood_recipe = recipe(DonatedMarch ~ ., train2)
+
+tree_model = decision_tree(cost_complexity = tune()) %>%
+  set_engine("rpart", model = TRUE) %>%
+  set_mode("classification")
+
+tree_grid = grid_regular(cost_complexity(), levels = 25)
+
+blood_wflow =
+  workflow() %>%
+  add_model(tree_model) %>%
+  add_recipe(blood_recipe)
+
+tree_res =
+  blood_wflow %>%
+  tune_grid(
+    resamples = folds,
+    grid = tree_grid
+  )
+```
+
+```{r}
+tree_res
+```
+
+```{r}
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2)
+```
+```{r}
+best_tree = tree_res %>%
+  select_best("accuracy")
+
+best_tree
+```
+
+### Task 10
+```{r}
+final_wf =
+  blood_wflow %>%
+  finalize_workflow(best_tree)
+```
+
+```{r}
+final_fit = fit(final_wf,train2)
+
+tree= final_fit %>%
+  extract_fit_parsnip() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree, tweak = 1.2)
+
+```
+
+## Task 11
+The "No Information Rate" accuracy is 76.29% meaning that if we categorized everyone as "no", the model would be 76.29% accurate. The training set resulted in an accuracy of 80.69% which is statistically significant according to the p-value. The testing set resulted in an accuracy of 78.22% which is not significant according to the p-value. This makes me question the usability of this model because the accuracy decreased when tested with new data and accuracy is not significant better than assuming "no" for everyone. You would have to consider the effects of assuming "no" for everyone and missing a "yes". In this case, we are assuming that a certain person did not donate blood in March which doesn't have an obvious consequence so it would depend on how this data needs to be used. 
+
+```{r}
+treepred = predict(final_fit, train2, type = "class")
+head(treepred)
+```
+
+```{r}
+confusionMatrix(treepred$.pred_class, train2$DonatedMarch, positive = "Yes")
+```
+
+
+```{r}
+treepred_test = predict(final_fit, test2, type = "class")
+head(treepred_test)
+```
+
+
+```{r}
+confusionMatrix(treepred_test$.pred_class, test2$DonatedMarch, positive = "Yes")
+```
+
